@@ -1,0 +1,58 @@
+# Treatment arm: full-stack (`slice-fullstack`: base + the app-backend and front-end skills, agents and subagents).
+#
+# An arm is one side of a comparison, and this file is not run on its own. Its
+# reference is `jobs/omp-ab-baseline.yaml` over the **same task ids**, so the two
+# line up per task; `jobs/omp-ab-config.yaml` is the other end of the scale —
+# the entire config — and answers the different question of whether the whole
+# thing helps.
+#
+# config root: `.staged/slices/fullstack` — base plus only this domain's skills, agents and
+# subagents. `scripts/stage_omp_config.py` takes `--exclude`/`--exclude-path`
+# and has no slice concept yet, so that root is built by hand for now. It is
+# named here so a run cannot silently measure the full config against itself.
+# **Neither this arm nor its base has been run**; these files exist so the
+# experiment is defined before it is spent.
+#
+# Why these benchmarks — swtbench-verified grades the *other* half of full-stack work — the agent must also write the test, and that test must fail on the base commit and pass on the gold patch — while the two skill2env tasks grade the artifact that sits on top of it. Together they are the closest thing in the set to a change that has to hold up end to end, though neither crosses a real boundary: no task here runs a service against a browser.
+#
+# Reading the result: per task, graded (subtests or named checks), never the
+# mean, and one flipped task is the measured noise floor — 0.25 of a mean swing
+# under a byte-identical config.
+#
+# 6 trials.
+job_name: omp-slice-fullstack
+jobs_dir: jobs
+
+agents:
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+    kwargs:
+      version: "18.11.1"
+      thinking: high
+      config_dir: .staged/slices/fullstack
+
+environment:
+  type: daytona
+  override_memory_mb: 4096
+
+datasets:
+  # Repo-level code change plus the test that proves it.
+  - name: swtbench-verified
+    task_names:
+      - pytest-dev__pytest-7982
+      - pytest-dev__pytest-7521
+      - psf__requests-5414
+      - sympy__sympy-21930
+
+  # The interface layer over it, graded by the same named checks as the ui/ux arm.
+  - name: skill2env/skill2env
+    task_names:
+      - skill2env/task_frontend-design_omc8cag2
+      - skill2env/task_senior-frontend_hp7ghs3e
+
+n_concurrent_trials: 2
+
+# A slow backend must not be recorded as a failed agent: with the noise measured
+# here, a timeout recorded as an agent failure is the largest source of a false
+# effect.
+agent_timeout_multiplier: 2.0

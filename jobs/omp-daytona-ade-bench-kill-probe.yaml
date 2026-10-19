@@ -1,0 +1,58 @@
+# Diagnostic job: the four trials of the 2026-10-16 suite that failed for a
+# reason the index mirror does not explain. This is the job the memory evidence
+# in DEFECTS.md, VERIFY.md and jobs/omp-daytona-ade-bench-heavy.yaml came from,
+# so it is committed rather than kept as a throwaway — a claim resting on a run
+# nobody can re-issue is not reproducible.
+#
+#   * exit 137 — omp SIGKILLed, cause unrecorded at the time:
+#     ade-bench-asana005, ade-bench-ana-eng007-medium (2026-10-16, at 334 s and
+#     209 s). This run answered it for one of the two: ana-eng007-medium was
+#     OOM-killed at the 4096 cap; asana005 survived at 2837 MiB and is still
+#     unattributed.
+#   * AgentTimeoutError at 1200 s: ade-bench-asana002, ade-bench-quickbooks001
+#     (still unexplained; not a harness defect as far as the artifacts go).
+#
+# Two differences from jobs/omp-daytona-ade-bench-full.yaml, both deliberate:
+#
+#   environment.delete: false   the sandbox survives the trial, so it can be
+#                               inspected in the Daytona UI or exec'd into,
+#                               instead of vanishing at trial end
+#   the four tasks above        only the trials that failed for a non-mirror
+#                               reason, so the run is short and cheap
+#
+# The agent writes agent/resource-probe.log (sampled memory) and, on a non-zero
+# exit, agent/postmortem.txt (cgroup oom_kill counter, memory.max, largest RSS
+# processes, dmesg and journalctl tails). Those two files are the point.
+#
+# A retained sandbox holds its memory for as long as it stays started, so this
+# job draws its 2 x 4096 MiB on the org's pool until the sandboxes are deleted —
+# check with `scripts`-adjacent `.staged/daytona_metrics.py` in the staging tree
+# or the Daytona dashboard, and delete them when the evidence is read.
+job_name: omp-daytona-ade-bench-kill-probe
+jobs_dir: jobs
+
+agents:
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+    kwargs:
+      version: "18.11.1"
+      thinking: high
+
+environment:
+  type: daytona
+  override_memory_mb: 4096
+  delete: false
+  env:
+    DBT_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+    DBT_ENGINE_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+
+datasets:
+  - name: ade-bench
+    task_names:
+      - ade-bench-asana005
+      - ade-bench-ana-eng007-medium
+      - ade-bench-asana002
+      - ade-bench-quickbooks001
+
+n_concurrent_trials: 2
+agent_timeout_multiplier: 2.0

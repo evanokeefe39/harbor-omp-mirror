@@ -1,0 +1,5 @@
+{
+  "name": "harbor-omp-e2e-fixture",
+  "private": true,
+  "dependencies": {}
+}

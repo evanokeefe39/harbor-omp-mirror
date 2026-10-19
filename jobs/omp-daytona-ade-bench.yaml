@@ -1,0 +1,155 @@
+# The same baseline half as jobs/omp-baseline-ade-bench.yaml, on Harbor's other
+# backend. Identical agent, model, kwargs, dataset and task selection — four
+# things differ, and all four are named here rather than left to be found:
+#
+#   environment.type            daytona, not docker (the point of the job)
+#   environment.env             the dbt index mirror, below
+#   override_memory_mb: 2048    the task asks for 4096 and docker gives it that;
+#                               this job halves it — see "Memory" below
+#   agent_timeout_multiplier    a variance cushion, not a requirement, below
+#
+# So the pair isolates the *backend*. It does not isolate the sandbox's resources
+# or the agent's deadline: read those two as part of "on Daytona", not as noise.
+#
+#   uv run harbor run -c jobs/omp-daytona-ade-bench.yaml --yes \
+#     --env-file <env-file> -o <fresh-dir>
+#
+# `--env-file` supplies DAYTONA_API_KEY. The registry fetch, the image build and
+# the snapshot upload all happen on this host; only the trial itself is remote.
+# Always pass a fresh `-o`: a re-run into an existing jobs_dir can replay the
+# cached trial while rewriting its mtimes.
+#
+# On Windows, prefix the command with the git override below, or the task's own
+# verifier script can arrive CRLF, which kills its shebang in the sandbox:
+#
+#   GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.autocrlf GIT_CONFIG_VALUE_0=false
+#
+# Harbor checks a task out with this host's git (`harbor/registry/client/
+# git_repo.py`: `git clone --no-checkout` then `sparse-checkout` then
+# `checkout`), and Git for Windows sets `core.autocrlf=true` at *system* level,
+# so `#!/bin/bash` lands as `#!/bin/bash\r`. The sandbox then reports
+# `bash: line 1: /tests/test.sh: cannot execute: required file not found` and no
+# verifier ever runs. Docker tolerates the byte-identical file because it wraps
+# the exec in `bash -c`, and bash ignores a CRLF shebang; Daytona wraps it in
+# `sh -c`. The script itself is a bare path on every backend (`harbor/utils/
+# scripts.py` attempts a `.sh` as a direct execution), so the invoking shell is
+# the whole difference. Measured 2026-10-16: the blob is LF, the checked-out
+# cache copy is CRLF, and the system git config is the cause.
+#
+# It is not deterministic, though. In the pre-fix run that produced the failure
+# (`.staged/runs/omp-daytona-1`) **one of the two trials executed its verifier
+# anyway**, from the same CRLF tree and with a byte-identical `tests/test.sh` —
+# that one ran to the egress reset below and scored 0; the other died on the
+# shebang with no reward file at all. The cause above is confirmed and the
+# override is proven sufficient (every LF-era trial ran its verifier), but why
+# one trial survived is **not** settled. Recorded as unresolved in `DEFECTS.md`.
+#
+# Memory: `override_memory_mb` *replaces* the task's own request rather than
+# capping it (`harbor/environments/base.py`). Both ade-bench tasks ask for
+# 4096 MB, and docker gives them exactly that; this job halves it, so two
+# concurrent sandboxes draw half the org's shared pool and the pair stays cheap
+# to re-run. Both tasks pass at 2048 MB — the stronger result of the two. To make
+# the sandbox the *only* variable, set this to 4096. That variant has been run:
+# jobs/omp-daytona-ade-bench-full.yaml ran on 2026-10-16 with 4096, and it carries
+# both of this pair's tasks at that value — `ade-bench-ana-eng008` at 1.0 and
+# `ade-bench-f1003` at 1.0.
+#
+# The number must be a whole-GiB multiple: Daytona floors it, so 8000 becomes
+# 7 GiB and 3000 becomes 2 GiB — 4096 and 2048 already are. The org cap is 10 GiB
+# across all sandboxes, shared with every other member of the org.
+#
+# Egress: measured, and repaired in this file. Daytona Tiers 1-2 pin outbound
+# traffic to a fixed essential-host list that no sandbox can widen (Tier 3 adds
+# full internet and `domainAllowList`), and ADE-bench's verifier runs a bare
+# `dbt deps`, which fetches its package index from hub.getdbt.com. In the sandbox
+# that connection is reset, and an offline `dbt deps` clears `dbt_packages`
+# before failing — so the run dies downstream of the index and scores 0. An
+# oracle applying the task's own published solution scored **0.0** on Daytona
+# against **1.0** for the same task on docker, which is the whole difference.
+#
+# `environment.extra_allowed_hosts` does *not* help: Harbor drops it
+# (`harbor/trial/network_policy.py:23` `merge_extra_allowlists`, warning at
+# `:28-36`, called from `:78` and `:117` — the task declares no policy, so the
+# effective environment is "public") and Daytona's org-level egress governs
+# regardless.
+# Tier 2 would not change this either; the docs put Tiers 1 and 2 on the same
+# fixed list.
+#
+# The fix keeps the blocked host *out of the path* rather than asking for it.
+# The hub's own payload shows package tarballs already come from
+# codeload.github.com — GitHub, which the policy allows — so only the index
+# lookup leaves the allowlist, and dbt redirects exactly that with
+# DBT_PACKAGE_HUB_URL. `env` below points it at a commit-pinned mirror of the
+# hub's API (evanokeefe39/dbt-hub-mirror @ 33aeb13, which carries every package
+# the ade-bench suite declares and the closure beneath them). Measured: the same oracle
+# trial goes 0.0 → 1.0, with `dbt deps` reporting `Installed from version 1.3.2`
+# exactly as it does on docker.
+#
+# The mirror is **partial**, and a gap scores 0 before a test runs. Measured on
+# the full suite (2026-10-16): 6 of 48 tasks 404'd on a package the mirror does
+# not carry — asana002, asana005, asana005-hard and quickbooks002/3/4 — and the
+# summary cannot tell that apart from an agent that solved nothing.
+# `actual_test_total=0` in the trial's verifier/test-stdout.txt, beside the 404,
+# is what distinguishes them. Two of the six, asana002 and asana005, are also
+# among the four trials whose agent phase raised an exception, which is why only
+# four of the six are zeros with no other failure.
+# See docs/environments/daytona.md and DEFECTS.md 2026-10-16.
+#
+# Both spellings are set — dbt <=1.10 reads DBT_PACKAGE_HUB_URL and 1.11+ adds
+# DBT_ENGINE_PACKAGE_HUB_URL; this image carries dbt-core 1.10.11, so the plain
+# name is the one that matters, and setting both removes the guess.
+#
+# Also measured, in the other direction: the agent's own install curls
+# https://bun.sh/install, which the allowlist is not documented to carry — and
+# which is demonstrably reachable, since every trial in this series ran its setup
+# under `set -e` and then ran omp. So the tiers are not an enumeration of
+# "GitHub, npm and PyPI": take the documented list as a starting point, and
+# measure the host you actually need.
+#
+# Validate without spending anything:
+#   uv run harbor run -c jobs/omp-daytona-ade-bench.yaml --print-config
+#   uv run harbor run -c jobs/omp-daytona-ade-bench.yaml --dry-run
+
+job_name: omp-daytona-ade-bench
+jobs_dir: jobs
+
+agents:
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+    kwargs:
+      # Pinned for the same reason as the docker job: an unpinned run installs
+      # @latest, so its result is not comparable to a recorded one.
+      version: "18.11.1"
+      thinking: high
+
+environment:
+  type: daytona
+  # A multiple of 1024: Daytona floors to whole GiB.
+  override_memory_mb: 2048
+  # Keep the dbt hub out of the verifier's path — see "Egress" in the header.
+  # The verifier runs in this same container, so these reach it.
+  env:
+    DBT_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+    DBT_ENGINE_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+
+datasets:
+  - name: ade-bench
+    task_names:
+      - ade-bench-*
+    n_tasks: 2
+
+n_concurrent_trials: 1
+
+# The task's own agent budget is 600 s. Two of the four omp attempts on this
+# backend exhausted it on `ade-bench-f1003` while the agent was still working —
+# reading the project's yml, grepping, counting lines — with about 1 MB of
+# captured stdout on disk at the cut. (That 1 MB is `agent/omp.txt`; the session
+# JSONL for the trial is 358 KB.) The docker baseline's agent phase on the same
+# task took 332 s.
+#
+# Doubling is a **variance cushion, not a requirement**, and it is not what makes
+# the pair pass: the attempt that scored 1.0 ran its agent phase in 418 s, inside
+# the task's own budget. It is here so that a re-run cannot record a slow sandbox
+# as an agent failure — 2 of 4 attempts did need more than 600 s — and the cost
+# of a genuine hang is now up to 1200 s per trial rather than 600.
+agent_timeout_multiplier: 2.0

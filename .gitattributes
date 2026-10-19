@@ -1,0 +1,5 @@
+# Text is stored as LF in the index whatever a machine's core.autocrlf says.
+# Without this, a leaked `core.autocrlf=false` override (the Daytona launch sets one)
+# turned a Windows CRLF checkout into 148 CRLF files in one commit (#56, OAV-34),
+# and release-please then failed to bump the CRLF pyproject.toml.
+* text=auto

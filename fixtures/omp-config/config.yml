@@ -1,0 +1,4 @@
+# Keep this file minimal: a malformed global config.yml is quarantined and fails
+# startup, so it carries only keys the loader is known to accept.
+theme:
+  dark: dark

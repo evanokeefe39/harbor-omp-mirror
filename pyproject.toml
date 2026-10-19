@@ -1,0 +1,75 @@
+[project]
+name = "harbor-omp"
+version = "0.3.0"
+description = "OMP (oh-my-pi) as an out-of-tree Harbor installed agent."
+requires-python = ">=3.12"
+dependencies = [
+    "harbor>=0.24.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/harbor_omp"]
+
+[dependency-groups]
+dev = [
+    "harbor[daytona]>=0.24.0",
+    "mypy>=2.4.0",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    # Declared, not taken from PATH: a frozen sync must give a clean checkout a
+    # ruff to run. `uv.lock` pins the exact resolution.
+    "ruff>=0.7.4",
+]
+docs = [
+    "mkdocs-material>=9.5",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# `scripts/` is not an installed package, but `tests/unit` imports it, so the
+# repo root has to be importable at collection.
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+# `fixtures/tasks/` runs *inside* the task container: lint our own code only.
+# `backlog/` is the tool-managed board; its Markdown quotes code we don't own.
+extend-exclude = ["fixtures/tasks", "backlog"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",  # pycodestyle, pyflakes
+    "I",            # isort
+    "B",            # bugbear
+    "UP",           # pyupgrade
+    "SIM",          # simplify
+    "C4",           # comprehensions
+    "N",            # pep8-naming
+    "PT",           # pytest style
+    "RUF",          # ruff-specific
+    "D",            # pydocstyle
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.per-file-ignores]
+# Test names state the behaviour; a docstring per test only restates it.
+"tests/**" = ["D100", "D103"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "scripts", "tests"]
+mypy_path = "src"
+explicit_package_bases = true
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["harbor", "harbor.*"]
+follow_untyped_imports = true

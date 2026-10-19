@@ -1,0 +1,45 @@
+# Diagnostic job: the six tasks whose verifier executed no test on 2026-10-16
+# because the pinned dbt index mirror did not carry the package their
+# `packages.yml` needs, so `dbt deps` 404'd and the trial scored 0 in a way the
+# summary cannot tell apart from an agent that solved nothing.
+#
+# This is the job that proved the mirror fix. On 2026-10-16, five of these six
+# produced no test at all pre-fix; after the mirror carried the packages'
+# transitive closure at commit
+# `33aeb139b31a0a28097b46777d53cfd13b244099`, all six ran tests with zero 404s
+# (`scripts/check_verifier_ran.py <run-dir>` exits 0). Same backend, agent and
+# environment as jobs/omp-daytona-ade-bench-full.yaml; only the task selection is
+# narrower. Success is each trial's `verifier/test-stdout.txt` reporting a
+# non-zero `actual_test_total`, which is what the check reads.
+#
+# Committed rather than throwaway because the mirror claim in DEFECTS.md rests
+# on this run.
+job_name: omp-daytona-ade-bench-six
+jobs_dir: jobs
+
+agents:
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+    kwargs:
+      version: "18.11.1"
+      thinking: high
+
+environment:
+  type: daytona
+  override_memory_mb: 4096
+  env:
+    DBT_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+    DBT_ENGINE_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+
+datasets:
+  - name: ade-bench
+    task_names:
+      - ade-bench-asana002
+      - ade-bench-asana005
+      - ade-bench-asana005-hard
+      - ade-bench-quickbooks002
+      - ade-bench-quickbooks003
+      - ade-bench-quickbooks004
+
+n_concurrent_trials: 2
+agent_timeout_multiplier: 2.0

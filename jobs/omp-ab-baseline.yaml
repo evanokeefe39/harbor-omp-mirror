@@ -1,0 +1,238 @@
+# A/B arm A — **baseline**. An OMP agent on its bundled defaults, over the
+# seven-dataset suite in this file. Its sibling jobs/omp-ab-config.yaml is the
+# same job with one line added (`config_dir`), which is the whole point: these
+# two files must differ in **nothing else**.
+#
+# What it covers, by the domains this harness actually works in (the subagents
+# under `~/.omp/agent/agents/`: data + `dlc-*`, app-backend, ux/frontend, iac,
+# harness, doc) and against the lifecycle those domains run on — research, spec,
+# design, build, test, deploy, monitor, plus iteration, fixes and documentation:
+#
+#   data engineering     ade-bench          dbt models over messy sources
+#   analytics reasoning  dabstep            multi-step questions over local files
+#   app backend          swtbench-verified  repo-level code change + tests
+#   terminal / tool use  terminal-bench     CLI tasks, no repo handed over
+#   build artifacts      compilebench       binaries built, executed, hashed
+#   spec artifacts       skill2env          OpenAPI spec produced and checked
+#   front end / design   skill2env          token compiler + gallery, named checks
+#   diagram artifacts    skill2env          Mermaid and draw.io production
+#   design artifacts     vector-edit-gym    SVG repair, deterministic diff
+#
+#   infra / ops          -- UNMEASURED ON THIS HOST, see below --
+#
+# The visual axis is deliberately load-bearing, not a nicety: documentation
+# carries diagrams, sites are built and reviewed visually, and reports and
+# social content are artifacts of the same lifecycle. `vector-edit-gym` is the
+# one visual family here whose grading is a deterministic diff rather than a
+# VLM's opinion.
+#
+# What this suite cannot cover, and why — worth stating so nobody reads a green
+# run as coverage: **documentation prose, research, deploy and monitor have no
+# executable verifier in this set.** They are graded by judgement, and a judge
+# path (plus a way to tell "judge did not run" from "output was bad") is a
+# subsystem this harness does not have. A spec *document* is covered as far as
+# one can be — an OpenAPI file checked by a validator is objectively right or
+# wrong — but a design rationale or a runbook is not.
+#
+# **Infra/ops is unmeasured on this host, and the reason is a Windows one.**
+# `termigen-environments` carries the whole of the flat registry's
+# kubernetes/terraform/ansible/nginx/systemd surface and it cannot be checked out
+# here at all: one *other* task's tree holds filenames with colons in them
+# (`checkpoint_2024-01-12T08:15:23.chk`), legal on Linux and invalid on Windows,
+# so `git checkout` refuses the entire repository with `error: invalid path`.
+# Reproduced at the registry's pin and at current `main`, so pinning a different
+# ref is not a workaround; the same checkout of the same task ids done over HTTP
+# returns 200, so the tasks themselves are fine. Harbor downloads tasks
+# in-process on the host, before any sandbox exists, so no backend choice avoids
+# it. The family is dropped rather than left in a job that cannot start, and it
+# is usable from a Linux host -- which is where a full-coverage pass belongs.
+#
+# **Web/front-end was scouted, not assumed, and the spike split the two
+# candidates** (`jobs/omp-ab-spike.yaml`, run 2026-10-17 with `-a oracle`).
+# `skill2env` passed and is in the table above: its grader writes named
+# deterministic checks, read from the oracle run's own diagnostics. `webbench`
+# failed to build — its pinned Playwright base image
+# (`mcr.microsoft.com/playwright/python:v1.58.0-noble`) could not be fetched,
+# `connection reset by peer`, on both trials — so a browser-driven, two-image
+# family is excluded here on evidence rather than on suspicion, and would need
+# another backend. An axis absent from the table above is unmeasured, not
+# passed.
+#
+# Why the suite is shaped this way. This is not a capability benchmark; it is an
+# instrument for answering "did my config change help or hurt, and where". A
+# config delta is only readable against a known noise floor, and ours is
+# measured: four runs of one identical config on two tasks gave one task 1.0,
+# 1.0, 1.0 and the other 0.0, 0.0, 0.0, 1.0 — a 0.25 swing in the mean with no
+# change at all (`.staged/runs/omp-daytona-1..4__omp-daytona-ade-bench`, config
+# hash `9ef396d2c8`). So: report **per task** and **graded** (subtests passed /
+# subtests run, not just the binary reward), treat one flipped task as noise,
+# and never read the mean alone.
+#
+# Selection rules, applied to every task below:
+#   * executable verifier only — reward comes from the task's own test script,
+#     never an LLM judge or a human rater
+#   * no credentials, nothing fetched at agent time
+#   * a few minutes per trial where possible; a long deadline is a variance
+#     source, which is what `agent_timeout_multiplier: 2.0` is here to absorb
+#     rather than to create
+#   * partial credit where it exists: ade-bench reports subtests, and a config
+#     that gets one dbt test further shows up even when reward stays 0
+#
+# Deliberately excluded: `termigen-environments` (cannot be checked out on a
+# Windows host -- colon-bearing filenames in another task's tree, `error: invalid
+# path`, at the pin and at `main` alike; the whole repo fails, not one task);
+# Deliberately excluded: `blobfishai/webbench` (its Playwright base image cannot
+# be fetched in this build environment — `mcr.microsoft.com`, connection reset
+# by peer, both trials; it also needs two images and a browser);
+# `webgen-bench` (VLM-judge reward and a VLM_API_KEY);
+# `billxbf/mimo-v26-webdev` (vision judge, HF_TOKEN); `grafana/o11y-bench`
+# (rubric criteria plus an ANTHROPIC_API_KEY in its grading pipeline);
+# `deveval` (fetches chromedriver 2.46 at verification time, on a dead 2018
+# toolchain); `otel-bench` (fetches at verification time, and its `traces.json`
+# is not regenerated by the verifier); `devopsgym` (5-30 min trials over 1-5 GB
+# images — a variance source, however incident-shaped the work is);
+# `open-design` (verification type not established — the Hub archives are
+# auth-gated, so it cannot be screened); `ade-bench-asana005` (no sandbox this
+# platform can create fits it); `ade-bench-ana-eng007-medium` (needs the 8 GiB
+# tier and therefore serialises — it belongs in a separate heavy check);
+# `terminal-bench@4.0.0` (task metadata not publicly readable, and its names
+# suggest GPU/heavy-sim); `swebench-verified` (kept out of the lean set: 3000 s
+# agent *and* verifier ceilings per task, and mutable `:latest` images — add it
+# back as an eighth dataset when a change is large enough to warrant the hours).
+#
+# KNOWN PRE-FLIGHT LIMIT, measured not assumed: `--dry-run` validates the config
+# shape and the trial count (it prints `30 trial(s)`) and nothing else — its own
+# output says `Skipped: Task-aware configuration preflight for remote tasks
+# (requires task contents)` and `Skipped: Hub task contents (metadata-only
+# check)`. So it cannot tell you whether a task is downloadable, and it cannot
+# tell you whether an egress allowlist is right. Two things it does not cover,
+# each caught the hard way: a dataset whose git repo will not check out on this
+# host (see the exclusion list), and the terminal-bench verifier installing `uv`
+# from `astral.sh` and packages from PyPI *inside* the sandbox — if that egress
+# is outside the allowlist every terminal-bench trial scores 0 with a failed
+# verifier, which looks exactly like an agent failure and is not one. The ade-bench
+# image additionally needs the pinned dbt index mirror supplied below. Test both
+# with one real trial and read its verifier output, not with the dry-run.
+job_name: omp-ab-baseline
+jobs_dir: jobs
+
+agents:
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+    kwargs:
+      version: "18.11.1"
+      thinking: high
+
+environment:
+  type: daytona
+  override_memory_mb: 4096
+  env:
+    DBT_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+    DBT_ENGINE_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+
+datasets:
+  # Data engineering: dbt models over messy source data, graded by singular dbt
+  # tests. Chosen from our own runs — two that pass (regression sentinels, and
+  # `quickbooks004` carries 48 subtests so it has the finest gradient available)
+  # and three that scored 0 (`airbnb005`, `ana-eng006`, `asana004`, 4-7 subtests
+  # each), which are the ones a config could plausibly move. The three zeros have
+  # each been measured once, so the repeatability pass is what promotes or drops
+  # them — do not read them as firm baselines until it has run.
+  - name: ade-bench
+    task_names:
+      - ade-bench-quickbooks004
+      - ade-bench-asana003
+      - ade-bench-airbnb005
+      - ade-bench-ana-eng006
+      - ade-bench-asana004
+
+  # Terminal/agentic: CLI tool use with no repo handed to the agent. Prebuilt
+  # date-pinned images, so no build and no snapshot on Daytona. Four tasks chosen
+  # for a small image and a self-contained job: git state, log arithmetic, SQLite
+  # recovery, COBOL compile-and-run equivalence.
+  - name: terminal-bench
+    version: "2.0"
+    task_names:
+      - fix-git
+      - log-summary-date-ranges
+      - sqlite-db-truncate
+      - cobol-modernization
+
+  # Test writing — a different capability from fixing code: the agent's test must
+  # fail on the base and pass on the gold patch. 1200 s ceilings (a third of
+  # swebench-verified's), ~980 MiB images, two tasks sharing one image family.
+  - name: swtbench-verified
+    task_names:
+      - pytest-dev__pytest-7982
+      - pytest-dev__pytest-7521
+      - psf__requests-5414
+      - sympy__sympy-21930
+
+  # Analytics reasoning over local files, no dbt and no warehouse: the verifier is
+  # a vendored stdlib scorer (numeric tolerance + string similarity), so it is
+  # hermetic and needs no model. Easy tier — the adapter's own parity data shows
+  # the hard tier is less stable.
+  - name: dabstep
+    task_names:
+      - dabstep-24
+      - dabstep-51
+      - dabstep-53
+      - dabstep-57
+
+  # The build/config stage, and the one long trial in the set: the verifier
+  # executes the static binaries the agent built and checks an exact SHA-1 of
+  # `"Hello World\n"`. 4096 MiB, a 900 s agent ceiling, a deterministic
+  # toolchain. Its pin's own message reads "Fix oracle solutions for Daytona
+  # compatibility", and its checkout was reproduced on this host before it was
+  # trusted -- because a family that cannot be checked out here cannot run at
+  # all, which is what happened to `termigen-environments` (see the header).
+  - name: compilebench
+    task_names:
+      - coreutils-static
+
+  # Front-end / design and diagram artifacts — the axis the spike settled on
+  # 2026-10-17, and the only family here whose reward is a set of named checks
+  # *within* a task: `skill2env`'s verifier writes a reward of five or six
+  # sub-metrics (gallery, synchronization, metamorphic, traceability, plus
+  # authoring-model contract checks), which makes it the finest gradient in the
+  # suite — finer than ade-bench's dbt tests. Confirmed programmatic rather than
+  # judged, which is what the spike was for: the oracle run's `diagnostics.txt`
+  # reads `PASS repeat build is idempotent`, `PASS rider chart.emphasis override
+  # locality`, `PASS master token coverage: 30 rows`, and its
+  # `gallery-results.json` carries a per-check pass/fail with computed style
+  # values. A judge would not emit either. The runtime is offline, and the two
+  # diagram tasks are the closest thing either readable namespace has to a
+  # documentation artifact.
+  - name: skill2env/skill2env
+    task_names:
+      - skill2env/task_frontend-design_omc8cag2
+      - skill2env/task_frontend-design-review_pjl5uaib
+      - skill2env/task_senior-frontend_hp7ghs3e
+      - skill2env/task_utility-mermaid-diagrams_ohp0cgf2
+      - skill2env/task_aws-architecture-diagram_aih35oor
+      - skill2env/task_openapi-spec-generator_it57lh73
+
+  # The visual/artifact axis, and the only family here that touches it: SVG
+  # defect repair graded by a deterministic structural diff, `allow_internet =
+  # false`, 512 MiB and a 180 s agent ceiling — the cheapest family in the set.
+  # `ea` is one defect, `ha` two at once, so this is not four copies of the same
+  # sensitivity. Caveat: the Hub archives are auth-gated, so the per-task
+  # verifier fields are read from the benchmark's own public Harbor task
+  # definition rather than from the package we will run.
+  - name: thetalab/vector-edit-gym
+    task_names:
+      - thetalab/vector-edit-gym-ea-001
+      - thetalab/vector-edit-gym-ea-002
+      - thetalab/vector-edit-gym-ea-003
+      - thetalab/vector-edit-gym-ea-011
+      - thetalab/vector-edit-gym-ha-001
+      - thetalab/vector-edit-gym-ha-002
+
+# 30 trials across seven datasets — 5 ade-bench, 4 terminal-bench, 4 swtbench,
+# 4 dabstep, 1 compilebench, 6 skill2env, 6 vector-edit-gym
+# — two at a time at 4096 MiB apiece.
+n_concurrent_trials: 2
+
+# A slow backend must not be recorded as a failed agent — with the noise we have
+# measured, that is the single largest source of a false config effect.
+agent_timeout_multiplier: 2.0

@@ -1,0 +1,34 @@
+# Cheapest real probe: build an ade-bench task image and install Bun + omp, then
+# stop. No model spend, no agent run, no verifier.
+#
+#   uv run harbor run -c jobs/omp-install-smoke.yaml --yes -o <fresh-dir>
+#
+# This is the step that proves the environment build, the Bun install and
+# `bun install -g @oh-my-pi/pi-coding-agent` work inside a task image — the
+# three things no host-side unit test can reach (docs/examples.md, O2). It also
+# guards the image dependency that has already killed a trial: ade-bench's
+# images do not ship `unzip`, which `bun.sh/install` requires (docs/operations.md,
+# D4). Equivalent to adding `--install-only` on the command line.
+#
+# ADE-bench downloads its DuckDB databases during image build, so the first run
+# of a task needs internet.
+
+job_name: omp-install-smoke
+jobs_dir: jobs
+install_only: true
+
+agents:
+  # Left unpinned on purpose: this job's subject is the install path it builds,
+  # so `@latest` is the honest thing for it to test.
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+
+environment:
+  type: docker
+
+datasets:
+  - name: ade-bench
+    task_names:
+      - ade-bench-f1003
+
+n_concurrent_trials: 1

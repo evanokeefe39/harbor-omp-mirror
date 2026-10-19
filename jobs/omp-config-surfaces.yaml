@@ -1,0 +1,77 @@
+# Full-surface probe, as a job. The runnable form of the evidence table in
+# docs/examples.md: bootstrap a fixture OMP config (fixtures/omp-config,
+# one of every surface) and make each surface observable from a *plain*
+# ade-bench run — no prompt that asks the agent to enumerate itself.
+#
+#   uv run harbor run -c jobs/omp-config-surfaces.yaml --yes -o <fresh-dir>
+#
+# Read `agent/omp.txt` in the trial directory. That file is the CLI's stdout and
+# stderr merged (`run()` pipes `2>&1`), so it is the only artifact the fixture's
+# own markers can land in — `trajectory.json` carries messages, not the request.
+#
+#   surface      what to grep for in agent/omp.txt
+#   -----------  ---------------------------------------------------------------
+#   AGENTS.md    HARBOR_OMP_FIXTURE_SURFACE AGENTS.md present
+#   rules        HARBOR_OMP_FIXTURE_SURFACE rules present
+#   skills       HARBOR_OMP_FIXTURE_SURFACE skills present         (the roster line)
+#   skills-body  HARBOR_OMP_FIXTURE_SURFACE skills-body present    (the card's real bar)
+#   agents       HARBOR_OMP_FIXTURE_SURFACE agents present
+#   extensions   HARBOR_OMP_FIXTURE_SURFACE extensions present
+#   hooks        HARBOR_OMP_FIXTURE_HOOK loaded + session_start handler ran
+#   mcp.json     Warning: MCP server "harbor-fixture-existing" failed to connect
+#                (R5: the existing file is read and merged, not clobbered)
+#                mcp_tools:harbor-fixture-live in this file, with NO warning for
+#                it — the tool list omp cached after the stdio server answered
+#
+# `skills` is two facts, not one. omp exposes a skill as a roster line — name and
+# description, folded into the system prompt — and serves its *body* only when the
+# model reads `skill://<name>`. `globs` and `alwaysApply` are metadata for skills,
+# not automatic-invocation controls, and no `skills.*` setting injects a body
+# (`omp://skills.md`). So the body cannot arrive on its own; the instruction below
+# invites the read rather than leaving it to the model's mood. It asks the agent to
+# *use* a document in its own config, never to enumerate itself.
+#
+# The first five lines are printed by the fixture's own extension
+# (fixtures/omp-config/extensions/harbor-hello.ts): AGENTS.md, rules/, skills/
+# and agents/ take effect by being folded into the request — the system prompt
+# and the `task` tool's agent roster — and omp writes neither of those to any
+# collected artifact, so something inside the session has to report them. The
+# hook and the MCP warning are the surfaces reporting themselves: the hook's
+# stderr marker is its own effect, and omp warns about the unreachable fixture
+# MCP server by name. Each report line names the marker it looked for and
+# prints ABSENT when the surface is missing, so a config that never bootstrapped
+# cannot pass quietly.
+#
+# `config_dir` is an *agent dir* (the shape of ~/.omp/agent), which is what
+# fixtures/omp-config is. fixtures/omp-config-root holds the root-level extras
+# (marketplaces.json, plugins/, version.txt) that only the `config_url` archive
+# path bootstraps; this job deliberately does not exercise it.
+
+job_name: omp-config-surfaces
+jobs_dir: jobs
+
+# The read that makes `skills-body` observable. Deliberately an instruction to *use*
+# the fixture's own skill, so the body reaches the model as part of doing the task.
+extra_instructions:
+  - "Read the harbor-hello skill with the read tool (skill://harbor-hello) and follow it."
+
+agents:
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+    kwargs:
+      # Pinned: an unpinned run installs @latest, so its result is not
+      # comparable to the one recorded in docs/examples.md.
+      version: "18.11.1"
+      thinking: high
+      config_dir: fixtures/omp-config
+
+environment:
+  type: docker
+
+datasets:
+  - name: ade-bench
+    task_names:
+      - ade-bench-*
+    n_tasks: 2
+
+n_concurrent_trials: 1

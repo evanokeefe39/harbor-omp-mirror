@@ -1,0 +1,54 @@
+# Treatment arm: report writing (`slice-reports`: base + the documentation, diagram and spec skills).
+#
+# An arm is one side of a comparison, and this file is not run on its own. Its
+# reference is `jobs/omp-ab-baseline.yaml` over the **same task ids**, so the two
+# line up per task; `jobs/omp-ab-config.yaml` is the other end of the scale —
+# the entire config — and answers the different question of whether the whole
+# thing helps.
+#
+# config root: `.staged/slices/reports` — base plus only this domain's skills, agents and
+# subagents. `scripts/stage_omp_config.py` takes `--exclude`/`--exclude-path`
+# and has no slice concept yet, so that root is built by hand for now. It is
+# named here so a run cannot silently measure the full config against itself.
+# **Neither this arm nor its base has been run**; these files exist so the
+# experiment is defined before it is spent.
+#
+# Why these benchmarks — **this is the weakest mapping in the set, and it says so rather than pretending otherwise.** No benchmark in either readable namespace grades *prose*: a report, an ADR, a runbook is graded by judgement, and a judge path is a subsystem this harness does not have. What can be graded is the report's structured artifacts — a Mermaid diagram that has to render in two themes, a draw.io page that has to satisfy a style contract, an OpenAPI document that has to pass a validator — so those are what this arm measures, and a green run means the diagrams and specs improved, not the prose.
+#
+# Reading the result: per task, graded (subtests or named checks), never the
+# mean, and one flipped task is the measured noise floor — 0.25 of a mean swing
+# under a byte-identical config.
+#
+# 3 trials.
+job_name: omp-slice-reports
+jobs_dir: jobs
+
+agents:
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+    kwargs:
+      version: "18.11.1"
+      thinking: high
+      config_dir: .staged/slices/reports
+
+environment:
+  type: daytona
+  override_memory_mb: 4096
+
+datasets:
+  - name: skill2env/skill2env
+    task_names:
+      # A diagram audit and remediation: every block must render locally in two themes,
+      # facts must stay recoverable, approval status is encoded by text and by shape.
+      - skill2env/task_utility-mermaid-diagrams_ohp0cgf2
+      # A draw.io architecture page against a style contract plus a matching markdown.
+      - skill2env/task_aws-architecture-diagram_aih35oor
+      # A spec document, checked as a document rather than described.
+      - skill2env/task_openapi-spec-generator_it57lh73
+
+n_concurrent_trials: 2
+
+# A slow backend must not be recorded as a failed agent: with the noise measured
+# here, a timeout recorded as an agent failure is the largest source of a false
+# effect.
+agent_timeout_multiplier: 2.0

@@ -1,0 +1,41 @@
+# Registry route: `ade-bench` is a published Harbor dataset, so nothing is
+# vendored here.
+#
+#   uv run harbor run -c jobs/ade-bench-smoke.yaml --yes
+#
+# ADE-bench is dbt Labs' *Analytics Data Engineer Bench* — a different benchmark
+# from Snowflake Labs' data-eng-bench, and the one that actually lives in the
+# Harbor registry: `harbor run -d ade-bench` resolves 48 tasks. Tasks are dbt
+# projects backed by DuckDB, graded by singular dbt tests.
+#
+# Note the DuckDB databases are downloaded during image build, so the first run
+# of each task needs internet.
+#
+# Confidence check without spending:
+#   uv run python -c "import asyncio; from harbor.registry.client.harbor.harbor \
+#     import HarborRegistryClient as C; \
+#     print(len(asyncio.run(C().get_dataset_metadata('ade-bench')).task_ids))"
+
+job_name: ade-bench-smoke
+jobs_dir: jobs
+
+agents:
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+    kwargs:
+      # Pinned: an unpinned run installs @latest, so its result is not
+      # comparable to the one recorded in docs/examples.md.
+      version: "18.11.1"
+      thinking: high
+      config_dir: .staged/omp-agent
+
+environment:
+  type: docker
+
+datasets:
+  - name: ade-bench
+    task_names:
+      - ade-bench-*
+    n_tasks: 2
+
+n_concurrent_trials: 1

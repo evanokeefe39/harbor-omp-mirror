@@ -1,0 +1,139 @@
+# A/B arm B — **your config**. Identical to jobs/omp-ab-baseline.yaml in every
+# line except `config_dir`, which bootstraps the staged agent directory into the
+# sandbox — the eval surface is `~/.omp/agent` only, never the `~/.omp` root
+# (docs/operations.md, O3). The task list is the same seven-dataset suite — data engineering,
+# analytics reasoning, app-backend code, terminal/agentic, build and spec
+# artifacts, front-end/design and diagram artifacts, and SVG repair — and its
+# coverage, its exclusions and the axes it cannot
+# measure are documented in arm A's header, not repeated here. Diff the two
+# files before every run. The comments differ between the two; the configuration
+# must not. Compare without them, and expect exactly two changes — the `job_name`
+# and the added `config_dir`:
+#
+#   grep -v '^[[:space:]]*#' jobs/omp-ab-baseline.yaml > /tmp/ab-a.yaml
+#   grep -v '^[[:space:]]*#' jobs/omp-ab-config.yaml   > /tmp/ab-b.yaml
+#   diff /tmp/ab-a.yaml /tmp/ab-b.yaml
+#
+# Measured on 2026-10-17, that prints exactly two changes — `job_name` and the
+# added `config_dir` — and exits 1. Process substitution (`diff <(…)`) and
+# `diff -I` are both unusable here: the shell has no `/dev/fd`, and the `diff`
+# on PATH is not GNU diff and rejects `-I`. A third line in that output is a
+# confound, and a confound is how a suite like this reports its own noise as an
+# improvement.
+#
+# The config root is produced by `uv run python scripts/stage_omp_config.py`
+# (add `--eval` for the eval profile). Re-stage it before each measurement — a
+# stale `.staged/omp-agent` makes both arms identical and the delta zero.
+#
+# Two things to hold constant, or the delta is not attributable to the config:
+#
+#   1. **The model.** The agent-level `model_name` below is pinned, but if the
+#      config under test also changes OMP's own model roles, you are measuring
+#      config + model. That is a legitimate thing to measure — just say so when
+#      the result is read, and keep a variant with the model roles matched if you
+#      want the config-only number.
+#   2. **The environment.** Memory, concurrency, timeout multiplier, mirror env
+#      vars and the task list are identical to arm A on purpose. Changing any of
+#      them makes the two arms incomparable, which is exactly how the earlier
+#      2026-10-16 baseline was misread: four runs that looked identical differed
+#      in `agent_timeout_multiplier`, and two trials that "timed out" were
+#      measuring the job file rather than the agent.
+#
+# Method: run this arm twice with distinct `--job-name`s and arm A twice, then
+# read per task, on subtests where the task reports them. One flipped task is
+# noise (measured: 1 of 2 tasks flipped under an identical config); two in the
+# same family is a signal worth chasing.
+job_name: omp-ab-config
+jobs_dir: jobs
+
+agents:
+  - name: harbor_omp:Omp
+    model_name: openrouter/deepseek/deepseek-v4.1-flash
+    kwargs:
+      version: "18.11.1"
+      thinking: high
+      config_dir: .staged/omp-agent
+
+environment:
+  type: daytona
+  override_memory_mb: 4096
+  env:
+    DBT_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+    DBT_ENGINE_PACKAGE_HUB_URL: "https://raw.githubusercontent.com/evanokeefe39/dbt-hub-mirror/33aeb139b31a0a28097b46777d53cfd13b244099/"
+
+datasets:
+  - name: ade-bench
+    task_names:
+      - ade-bench-quickbooks004
+      - ade-bench-asana003
+      - ade-bench-airbnb005
+      - ade-bench-ana-eng006
+      - ade-bench-asana004
+
+  - name: terminal-bench
+    version: "2.0"
+    task_names:
+      - fix-git
+      - log-summary-date-ranges
+      - sqlite-db-truncate
+      - cobol-modernization
+
+  - name: swtbench-verified
+    task_names:
+      - pytest-dev__pytest-7982
+      - pytest-dev__pytest-7521
+      - psf__requests-5414
+      - sympy__sympy-21930
+
+  - name: dabstep
+    task_names:
+      - dabstep-24
+      - dabstep-51
+      - dabstep-53
+      - dabstep-57
+
+  # The build/config stage, and the one long trial in the set: the verifier
+  # executes the static binaries the agent built and checks an exact SHA-1 of
+  # `"Hello World\n"`. 4096 MiB, a 900 s agent ceiling, a deterministic
+  # toolchain. Its pin's own message reads "Fix oracle solutions for Daytona
+  # compatibility", and its checkout was reproduced on this host before it was
+  # trusted -- because a family that cannot be checked out here cannot run at
+  # all, which is what happened to `termigen-environments` (see the header).
+  - name: compilebench
+    task_names:
+      - coreutils-static
+
+  # Front-end / design and diagram artifacts — the axis the spike settled on
+  # 2026-10-17, and the only family here whose reward is a set of named checks
+  # *within* a task: `skill2env`'s verifier writes a reward of five or six
+  # sub-metrics (gallery, synchronization, metamorphic, traceability, plus
+  # authoring-model contract checks), which makes it the finest gradient in the
+  # suite — finer than ade-bench's dbt tests. Confirmed programmatic rather than
+  # judged, which is what the spike was for: the oracle run's `diagnostics.txt`
+  # reads `PASS repeat build is idempotent`, `PASS rider chart.emphasis override
+  # locality`, `PASS master token coverage: 30 rows`, and its
+  # `gallery-results.json` carries a per-check pass/fail with computed style
+  # values. A judge would not emit either. The runtime is offline, and the two
+  # diagram tasks are the closest thing either readable namespace has to a
+  # documentation artifact.
+  - name: skill2env/skill2env
+    task_names:
+      - skill2env/task_frontend-design_omc8cag2
+      - skill2env/task_frontend-design-review_pjl5uaib
+      - skill2env/task_senior-frontend_hp7ghs3e
+      - skill2env/task_utility-mermaid-diagrams_ohp0cgf2
+      - skill2env/task_aws-architecture-diagram_aih35oor
+      - skill2env/task_openapi-spec-generator_it57lh73
+
+  - name: thetalab/vector-edit-gym
+    task_names:
+      - thetalab/vector-edit-gym-ea-001
+      - thetalab/vector-edit-gym-ea-002
+      - thetalab/vector-edit-gym-ea-003
+      - thetalab/vector-edit-gym-ea-011
+      - thetalab/vector-edit-gym-ha-001
+      - thetalab/vector-edit-gym-ha-002
+
+n_concurrent_trials: 2
+
+agent_timeout_multiplier: 2.0
