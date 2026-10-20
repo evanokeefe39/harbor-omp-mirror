@@ -11,7 +11,7 @@ release and lost. Change the source repository and cut a release.
 
 ## Install
 
-    uv add "harbor-omp @ git+https://github.com/evanokeefe39/harbor-omp-mirror@mirror-preview.1"
+    uv add "harbor-omp @ git+https://github.com/evanokeefe39/harbor-omp-mirror@v0.4.0"
 
 Harbor resolves an installed agent by import path, so a job runs straight from a
 checkout of this tag:
@@ -32,4 +32,4 @@ The source repository's tests, docs, backlog, ledgers and `scripts/`, and every
 `jobs/<job_name>/` run directory (a trial writes its trajectory, logs and result
 there). None of them is part of the agent.
 
-Published at `mirror-preview.1`.
+Published at `v0.4.0`.
