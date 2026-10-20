@@ -1,6 +1,6 @@
 [project]
 name = "harbor-omp"
-version = "0.3.0"
+version = "0.4.0"
 description = "OMP (oh-my-pi) as an out-of-tree Harbor installed agent."
 requires-python = ">=3.12"
 dependencies = [

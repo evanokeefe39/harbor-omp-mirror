@@ -11,13 +11,13 @@ release and lost. Change the source repository and cut a release.
 
 ## Install
 
-    uv add "harbor-omp @ git+https://github.com/evanokeefe39/harbor-omp-mirror@mirror-preview.1"
+    uv add "harbor-omp @ git+https://github.com/evanokeefe39/harbor-omp-mirror@v0.4.0"
 
 Harbor resolves an installed agent by import path. A job that runs this agent
 names it as `harbor_omp:Omp`; the job config itself belongs to the runner, not to
 this mirror:
 
-    uv run --with "harbor-omp @ git+https://github.com/evanokeefe39/harbor-omp-mirror@mirror-preview.1" harbor run -c <job>.yaml --yes -o <jobs-dir>
+    uv run --with "harbor-omp @ git+https://github.com/evanokeefe39/harbor-omp-mirror@v0.4.0" harbor run -c <job>.yaml --yes -o <jobs-dir>
 
 ## Contents
 
@@ -36,4 +36,4 @@ The source repository's tests, docs, backlog, ledgers and `scripts/`, its job
 configs and fixtures, and every `jobs/<job_name>/` run directory (a trial writes
 its trajectory, logs and result there). None of them is part of the agent.
 
-Published at `mirror-preview.1`.
+Published at `v0.4.0`.
